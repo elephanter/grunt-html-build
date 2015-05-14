@@ -4,310 +4,75 @@
  * Copyright (c) 2013 SPA Tools
  * Code below is licensed under MIT License
  *
- * Permission is hereby granted, free of charge, to any person 
- * obtaining a copy of this software and associated documentation 
- * files (the "Software"), to deal in the Software without restriction, 
- * including without limitation the rights to use, copy, modify, merge, 
- * publish, distribute, sublicense, and/or sell copies of the Software, 
- * and to permit persons to whom the Software is furnished to do so, 
+ * Permission is hereby granted, free of charge, to any person
+ * obtaining a copy of this software and associated documentation
+ * files (the "Software"), to deal in the Software without restriction,
+ * including without limitation the rights to use, copy, modify, merge,
+ * publish, distribute, sublicense, and/or sell copies of the Software,
+ * and to permit persons to whom the Software is furnished to do so,
  * subject to the following conditions:
- * 
- * The above copyright notice and this permission notice shall be 
+ *
+ * The above copyright notice and this permission notice shall be
  * included in all copies or substantial portions of the Software.
- * 
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, 
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES 
- * OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. 
- * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR 
- * ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF 
- * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION 
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+ * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+ * OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+ * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR
+ * ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF
+ * CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
  * WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
 module.exports = function (grunt) {
     //#region Global Properties
 
-    var // Init 
-        _ = grunt.util._,
+    var _ = grunt.util._,
         EOL = grunt.util.linefeed,
-        URL = require('url'),
-        path = require('path'),
-        beautifier = require('js-beautify'),
-        beautify = {
-            js: beautifier.js,
-            css: beautifier.css,
-            html: beautifier.html
-        },
+        blockRegex =  /([\s]*<!--\s*build:\s*(\S*)\s*(\S*)\s*-->)(\n|\r|.)*?(<!--\s*endbuild\s*-->)/gi;
 
-        // Tags Regular Expressions
-        regexTagStartTemplate = "<!--\\s*%parseTag%:(\\w+)\\s*(inline)?\\s*(optional)?\\s*(recursive)?\\s*(noprocess)?\\s*([^\\s]*)\\s*-->", // <!-- build:{type} [inline] [optional] [recursive] {name} --> {} required [] optional
-        regexTagEndTemplate = "<!--\\s*\\/%parseTag%\\s*-->", // <!-- /build -->
-        regexTagStart = "",
-        regexTagEnd = "",
-        isFileRegex = /\.(\w+){2,4}$/;
-
-    //#endregion
-
-    //#region Private Methods
-
-    function getBuildTags(content) {
-        var lines = content.replace(/\r\n/g, '\n').split(/\n/),
-            tag = false,
-            tags = [],
-            last;
-
-        lines.forEach(function (l) {
-            var tagStart = l.match(new RegExp(regexTagStart)),
-                tagEnd = new RegExp(regexTagEnd).test(l);
-
-            if (tagStart) {
-                tag = true;
-                last = {
-                    type: tagStart[1],
-                    inline: !!tagStart[2],
-                    optional: !!tagStart[3],
-                    recursive: !!tagStart[4],
-                    noprocess: !!tagStart[5], 
-                    name: tagStart[6],
-                    lines: []
-                };
-                tags.push(last);
-            }
-
-            // switch back tag flag when endbuild
-            if (tag && tagEnd) {
-                last.lines.push(l);
-                tag = false;
-            }
-
-            if (tag && last) {
-                last.lines.push(l);
-            }
-        });
-
-        return tags;
+    function endsWith(str, suffix) {
+        return str.indexOf(suffix, str.length - suffix.length) !== -1;
     }
-    function validateBlockWithName(tag, params) {
-        var src = params[tag.type + "s"],
 
-            keys = tag.name.split("."),
-            ln = keys.length;
+    function replaceIncludes(filePath, pluginFiles){
+        return function(match, startBlock, type, tag, innerText, endOfBlock, offset, string ){
+            var fileSuffix = tag.replace(/\./g, "/") + "."+type
+            grunt.log.writeln("Processing tag "+tag+" with type "+type);
 
-        for (var i = 0; i < ln; i++) {
-            src = src[keys[i]]; // Search target
-        }
-
-        if (src) {
-            var opt = {},
-                files = src;
-
-            if (_.isObject(src)) {
-                if (src.files) {
-                    opt = _.omit(src, "files");
-                    files = src.files;
+            return _.reduce(pluginFiles, function(memo, f){
+                if (endsWith(f, fileSuffix)){
+                    grunt.log.writeln("Appending file "+ f);
+                    memo.push(grunt.file.read(f).toString());
                 }
-                else {
-                    // if paths are named, just take values
-                    files = _.values(src); 
-                }
-            }
-
-            files = grunt.file.expand(opt, files);
-
-            if (params.relative && opt.cwd) {
-                files = files.map(function (src) { return path.join(opt.cwd, src); });
-            }
-
-            return files;
-        }
-    }
-    function validateBlockAlways(tag) {
-        return true;
-    }
-
-    function setTagRegexes(parseTag) {
-        regexTagStart = regexTagStartTemplate.replace(/%parseTag%/, function () { return parseTag });
-        regexTagEnd = regexTagEndTemplate.replace(/%parseTag%/, function () { return parseTag });
-    }
-
-    //#endregion
-
-    //#region Processors Methods
-
-    function createTemplateData(options, extend) {
-        return {
-            data: extend ? _.extend({}, options.data, extend) : options.data
-        };
-    }
-    function processTemplate(template, options, extend) {
-        return grunt.template.process(template, createTemplateData(options, extend));
-    }
-    function processHtmlTagTemplate(options, extend) {
-        var template = templates[options.type + (options.inline ? "-inline" : "")];
-        if (options.noprocess) {
-            return template.replace("<%= src %>", extend.src);
-        }
-        else {
-            return processTemplate(template, options, extend);
+                return memo;
+            }, []).join(EOL);
         }
     }
 
-    function processHtmlTag(options) {
-        if (options.inline) {
-            var content = options.files.map(grunt.file.read).join(EOL);
-            return processHtmlTagTemplate(options, { src: content });
-        }
-        else {
-            return options.files.map(function (f) {
-                var url = options.relative ? path.relative(options.dest, f) : f;
-                
-                url = url.replace(/\\/g, '/');
-
-                if (options.prefix) {
-                    url = URL.resolve(options.prefix.replace(/\\/g, '/'), url);
-                }
-
-                return processHtmlTagTemplate(options, { src: url });
-            }).join(EOL);
-        }
-    }
-
-    //#endregion
-
-    //#region Processors / Validators / Templates
-
-    var
-        templates = {
-            'script': '<script type="text/javascript" src="<%= src %>"></script>',
-            'script-inline': '<script type="text/javascript"><%= src %></script>',
-            'style': '<link type="text/css" rel="stylesheet" href="<%= src %>" />',
-            'style-inline': '<style><%= src %></style>'
-        },
-        validators = {
-            script: validateBlockWithName,
-            style: validateBlockWithName,
-            section: validateBlockWithName,
-
-            process: validateBlockAlways,
-            remove: validateBlockAlways,
-
-            //base method
-            validate: function (tag, params) {
-                return validators[tag.type](tag, params);
-            }
-        },
-        processors = {
-            script: processHtmlTag,
-            style: processHtmlTag,
-            section: function (options) {
-                return options.files.map(function (f) {
-                    var content = grunt.file.read(f).toString();
-
-                    return options.recursive ?
-                        transformContent(content, options.params, options.dest) :
-                        content;
-                }).join(EOL);
-            },
-
-            process: function (options) {
-                return options.lines
-                                .map(function (l) { return processTemplate(l, options); })
-                                .join(EOL)
-                                .replace(new RegExp(regexTagStart), "")
-                                .replace(new RegExp(regexTagEnd), "");
-            },
-            remove: function (options) {
-                if (!options.name) return "";
-
-                var targets = options.name.split(",");
-                if (targets.indexOf(grunt.task.current.target) < 0) {
-                    return options.lines.join(EOL).replace(new RegExp(regexTagStart), "").replace(new RegExp(regexTagEnd), "");
-                }
-
-                return "";
-            },
-
-            //base method
-            transform: function (options) {
-                return processors[options.type](options);
-            }
-        };
-
-    //#endregion
-
-    function transformContent(content, params, dest) {
-        var tags = getBuildTags(content),
-            config = grunt.config();
-
-        tags.forEach(function (tag) {
-            var raw = tag.lines.join(EOL),
-                result = "",
-                tagFiles = validators.validate(tag, params);
-
-            if (tagFiles) {
-                var options = _.extend({}, tag, {
-                    data: _.extend({}, config, params.data),
-                    files: tagFiles,
-                    dest: dest,
-                    prefix: params.prefix,
-                    relative: params.relative,
-                    params: params
-                });
-
-                result = processors.transform(options);
-            }
-            else if (tag.optional) {
-                if (params.logOptionals)
-                    grunt.log.error().error("Tag with type: '" + tag.type + "' and name: '" + tag.name + "' is not configured in your Gruntfile.js but is set optional, deleting block !");
-            }
-            else {
-                grunt.fail.warn("Tag with type '" + tag.type + "' and name: '" + tag.name + "' is not configured in your Gruntfile.js !");
-            }
-
-            content = content.replace(raw, function () { return result });
-        });
-
-        if (params.beautify) {
-            content = beautify.html(content, _.isObject(params.beautify) ? params.beautify : {});
-        }
-
-        return content;
-    }
-
-    grunt.registerMultiTask('htmlbuild', "Grunt HTML Builder - Replace scripts and styles, Removes debug parts, append html partials, Template options", function () {
+    grunt.registerMultiTask('htmlbuild', "Grunt HTML Plugin injector - Replace comment tag with all plugin's partials", function () {
         var params = this.options({
-            beautify: false,
-            logOptionals: false,
-            relative: true,
+            pluginFiles: [],
             scripts: {},
             styles: {},
             sections: {},
-            data: {},
-            parseTag: 'build'
+            data: {}
         });
 
-        setTagRegexes(params.parseTag);
+        var pluginFiles = grunt.file.expand(params.pluginFiles);
 
         this.files.forEach(function (file) {
-            var dest = file.dest || "",
-                destPath, content;
-
             file.src.forEach(function (src) {
-                if (params.replace) {
-                    destPath = src;
+                //grunt.log.writeln("Processing " + src);
+                var content = grunt.file.read(src);
+                var newContents = content.replace(
+                    blockRegex,
+                    replaceIncludes(src, pluginFiles)
+                );
+                if (content !== newContents){
+                    grunt.file.write(src, newContents);
+                    grunt.log.ok("File " + src + " modified!");
                 }
-                else if (isFileRegex.test(dest)) {
-                    destPath = dest;
-                }
-                else {
-                    destPath = path.join(dest, path.basename(src));
-                }
-
-                content = transformContent(grunt.file.read(src), params, dest);
-
-                // write the contents to destination
-                grunt.file.write(destPath, content);
-                grunt.log.ok("File " + destPath + " created !");
             });
         });
     });
