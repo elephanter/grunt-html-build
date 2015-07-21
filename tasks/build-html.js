@@ -29,7 +29,8 @@ module.exports = function (grunt) {
 
     var _ = grunt.util._,
         EOL = grunt.util.linefeed,
-        blockRegex =  /([\s]*<!--\s*build:\s*(\S*)\s*(\S*)\s*-->)(\n|\r|.)*?(<!--\s*endbuild\s*-->)/gi;
+        blockRegex =  /([\s]*<!--\s*build:\s*(\S*)\s*(\S*)\s*-->)(\n|\r|.)*?(<!--\s*endbuild\s*-->)/gi,
+        injectRegex =  /([\s]*<!--\s*inject:\s*(\S*)\s*(\S*)\s*-->)(\n|\r|.)*?(<!--\s*endinject\s*-->)/gi;
 
     function endsWith(str, suffix) {
         return str.indexOf(suffix, str.length - suffix.length) !== -1;
@@ -49,10 +50,23 @@ module.exports = function (grunt) {
             }, []).join(EOL);
         }
     }
+    function replaceInjects(filePath, injectFiles, modifyFunc, params){
+        return function(match, startBlock, type, tag, innerText, endOfBlock, offset, string ){
+            return _.reduce(injectFiles, function(memo, f){
+                memo.push(
+                    modifyFunc(grunt.file.read(params.cwd+f).toString(), f)
+                );
+                return memo;
+            }, []).join(EOL);
+        }
+    }
 
     grunt.registerMultiTask('htmlbuild', "Grunt HTML Plugin injector - Replace comment tag with all plugin's partials", function () {
         var params = this.options({
             pluginFiles: [],
+            injectFiles: [],
+            modifyFunc: function(content, file){ return content;},
+            cwd: "",
             scripts: {},
             styles: {},
             sections: {},
@@ -60,15 +74,26 @@ module.exports = function (grunt) {
         });
 
         var pluginFiles = grunt.file.expand(params.pluginFiles);
+        var injectFiles = grunt.file.expand({ filter: 'isFile', cwd: params.cwd}, params.injectFiles);
+        console.log(injectFiles);
 
         this.files.forEach(function (file) {
             file.src.forEach(function (src) {
                 //grunt.log.writeln("Processing " + src);
                 var content = grunt.file.read(src);
-                var newContents = content.replace(
-                    blockRegex,
-                    replaceIncludes(src, pluginFiles)
-                );
+                var newContents = content;
+                if (pluginFiles.length>0){
+                    newContents = newContents.replace(
+                        blockRegex,
+                        replaceIncludes(src, pluginFiles)
+                    );
+                }
+                if (injectFiles.length>0){
+                    newContents = newContents.replace(
+                        injectRegex,
+                        replaceInjects(src, injectFiles, params.modifyFunc, params)
+                    );
+                }
                 if (content !== newContents){
                     grunt.file.write(src, newContents);
                     grunt.log.ok("File " + src + " modified!");
