@@ -29,7 +29,7 @@ module.exports = function (grunt) {
 
     var _ = grunt.util._,
         EOL = grunt.util.linefeed,
-        blockRegex =  /([\s]*<!--\s*build:\s*(\S*)\s*(\S*)\s*-->)(\n|\r|.)*?(<!--\s*endbuild\s*-->)/gi,
+        blockRegex =  /([\s]*<!--\s*build:\s*(html)\s*(\S*)\s*-->)(\n|\r|.)*?(<!--\s*endbuild\s*-->)/gi,
         injectRegex =  /([\s]*<!--\s*inject:\s*(\S*)\s*(\S*)\s*-->)(\n|\r|.)*?(<!--\s*endinject\s*-->)/gi;
 
     function endsWith(str, suffix) {
