@@ -41,13 +41,19 @@ module.exports = function (grunt) {
             var fileSuffix = tag.replace(/\./g, "/") + "."+type
             grunt.log.writeln("Processing tag "+tag+" with type "+type);
 
-            return _.reduce(pluginFiles, function(memo, f){
+            var replaceStrings = _.reduce(pluginFiles, function(memo, f){
                 if (endsWith(f, fileSuffix)){
                     grunt.log.writeln("Appending file "+ f);
                     memo.push(grunt.file.read(f).toString());
                 }
                 return memo;
-            }, []).join(EOL);
+            }, [])
+
+            if (replaceStrings.length == 0) { // do not replace, if nothing to replace with
+                replaceStrings.push(match)
+            }
+                
+            return replaceStrings.join(EOL);
         }
     }
     function replaceInjects(filePath, injectFiles, modifyFunc, params){
