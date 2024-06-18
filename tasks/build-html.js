@@ -29,8 +29,8 @@ module.exports = function (grunt) {
 
     var _ = grunt.util._,
         EOL = grunt.util.linefeed,
-        blockRegex =  /([\s]*<!--\s*build:\s*(html)\s*(\S*)\s*-->)(\n|\r|.)*?(<!--\s*endbuild\s*-->)/gi,
-        injectRegex =  /([\s]*<!--\s*inject:\s*(\S*)\s*(\S*)\s*-->)(\n|\r|.)*?(<!--\s*endinject\s*-->)/gi;
+        blockRegex =  /([\s]*<!--\s*build:\s*(html)\s*(\S*)\s*-->)((\n|\r|.)*?)(<!--\s*endbuild\s*-->)/gi,
+        injectRegex =  /([\s]*<!--\s*inject:\s*(\S*)\s*(\S*)\s*-->)((\n|\r|.)*?)(<!--\s*endinject\s*-->)/gi;
 
     function endsWith(str, suffix) {
         return str.indexOf(suffix, str.length - suffix.length) !== -1;
@@ -50,7 +50,7 @@ module.exports = function (grunt) {
             }, [])
 
             if (replaceStrings.length == 0) { // do not replace, if nothing to replace with
-                replaceStrings.push(match)
+                replaceStrings.push(innerText)
             }
                 
             return replaceStrings.join(EOL);
